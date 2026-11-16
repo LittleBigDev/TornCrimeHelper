@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TornCrimeHelper
 // @namespace    wardogs.torncrimehelper
-// @version      1.3
+// @version      1.4
 // @description  Aide aux crimes Torn. Bootlegging : genre de DVD à copier selon un ratio visé, Copy et Sell grisés quand ce n'est pas le moment. Graffiti : quartier et couleur à utiliser.
 // @match        https://www.torn.com/page.php?sid=crimes*
 // @grant        GM_getValue
@@ -400,7 +400,9 @@
       nom: r.querySelector("[class*=crimeOptionSection][class*=flexGrow]")?.childNodes[0]?.textContent.trim(),
       rep: Number(/Reputation (\d)/.exec(r.querySelector("[class*=reputationIconWrapper]")?.getAttribute("aria-label"))?.[1] || 0),
       verrouille: /locked/.test(r.querySelector("[class*=crimeOption]")?.className),
-      uniques: Number(/(\d+) unique outcome/.exec(r.querySelector("button[class*=commitButton]")?.getAttribute("aria-label"))?.[1] || 0),
+      // étoiles sous Spray, une par issue unique disponible ; l'étiquette du bouton les compte aussi, mais Torn la
+      // remplace faute de nerve (bouton grisé), alors que les étoiles restent
+      uniques: r.querySelectorAll('[class*="uniqueStar___"]').length,
     }));
   }
 
