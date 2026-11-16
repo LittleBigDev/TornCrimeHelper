@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TornCrimeHelper
 // @namespace    wardogs.torncrimehelper
-// @version      1.1
+// @version      1.2
 // @description  Aide aux crimes Torn. Bootlegging : genre de DVD à copier selon un ratio visé, Copy et Sell grisés quand ce n'est pas le moment. Graffiti : quartier et couleur à utiliser.
 // @match        https://www.torn.com/page.php?sid=crimes*
 // @grant        GM_getValue
@@ -351,33 +351,47 @@
     "Financial District": { echec: 2.87, argent: "Black", rep: "Red" },
     "City Center": { echec: 2.27, argent: "Green", rep: "Blue" },
   };
-  // Issues uniques à aller chercher dès le niveau atteint : objets clés et accès aux quartiers
-  const CLES = [
+  // Outils trouvés en issue unique, à aller chercher dès le niveau atteint : ils débloquent des issues en plus
+  // (souvent mieux payées) dans tous les quartiers et semblent éviter des échecs critiques (guide, wiki, Torning)
+  const OUTILS = [
     { nom: "West Side", niveau: 15, quoi: "Ladder" },
     { nom: "North Side", niveau: 25, quoi: "Wire Cutters" },
     { nom: "East Side", niveau: 35, quoi: "Paint Mask" },
-    { nom: "East Side", niveau: 50, quoi: "accès à Residential" },
-    { nom: "West Side", niveau: 50, quoi: "accès à Red-Light" },
   ];
+  // Issues uniques d'accès à un quartier, au niveau 50, qui comptent parmi les étoiles de ces quartiers
+  const ACCES = { "East Side": "Residential District", "West Side": "Red-Light District" };
   const COULEURS = { Black: "noir", Blue: "bleu", Brown: "marron", Green: "vert", Orange: "orange", Pink: "rose",
     Purple: "violet", Red: "rouge", White: "blanc", Yellow: "jaune" };
   const graffiti = () => location.hash.includes("graffiti");
 
-  // Quartiers : [{ nom, rep (étoiles 0-5), verrouille, uniques (issues uniques à trouver) }] ; niveau : skill Graffiti.
-  // Rend { nom, couleur, pourquoi } ou null. Ordre : issue unique du crew, objets clés et accès, quartier le plus sûr.
-  function conseilGraffiti(quartiers, niveau) {
+  // Un outil manque à coup sûr quand le quartier montre plus d'issues uniques que toutes les autres possibles :
+  // une par palier de réputation atteint (deux à R5 : crew et niveau 100), plus l'accès d'un quartier au niveau 50.
+  // Sinon on ne sait pas (l'étoile peut être une autre issue) : pas de détour.
+  function outilManquant(q, niveau) {
+    const autres = q.rep + (q.rep >= 5 ? 1 : 0) + (ACCES[q.nom] && niveau >= 50 ? 1 : 0);
+    return q.uniques > autres;
+  }
+
+  // Quartiers : [{ nom, rep (étoiles 0-5), verrouille, uniques (issues uniques à trouver) }] ; niveau : skill Graffiti ;
+  // masque : Paint Mask possédé. Rend { nom, couleur, pourquoi } ou null. Ordre : issue unique du crew, outils,
+  // accès à Residential, quartier le plus sûr. Red-Light (le plus risqué) et les autres issues uniques : pas de détour.
+  function conseilGraffiti(quartiers, niveau, masque) {
     const ouverts = quartiers.filter((q) => !q.verrouille && QUARTIERS[q.nom]);
     const de = (nom) => ouverts.find((q) => q.nom === nom);
     const couleur = (q) => (q.rep < 5 ? QUARTIERS[q.nom].rep : QUARTIERS[q.nom].argent);
+    const conseil = (q, pourquoi) => ({ nom: q.nom, couleur: couleur(q), pourquoi });
     const sansCrew = quartiers.some((q) => q.nom === "Financial District" && q.verrouille);
     const crew = niveau >= 70 && sansCrew && ouverts.find((q) => q.rep >= 5 && q.uniques > 0 && !/Financial|City/.test(q.nom));
-    if (crew) return { nom: crew.nom, couleur: couleur(crew), pourquoi: "issue unique du crew (R5 et niveau 70)" };
-    const cle = CLES.find((c) => niveau >= c.niveau && de(c.nom)?.uniques > 0);
-    // les étoiles ne disent pas laquelle : lister ce que le quartier peut donner à ce niveau
-    const quoi = () => CLES.filter((c) => c.nom === cle.nom && niveau >= c.niveau).map((c) => c.quoi).join(" ou ");
-    if (cle) return { nom: cle.nom, couleur: couleur(de(cle.nom)), pourquoi: `issue unique à trouver (${quoi()})` };
+    if (crew) return conseil(crew, "issue unique du crew (R5 et niveau 70)");
+    const outil = OUTILS.find((o) => niveau >= o.niveau && de(o.nom)
+      && (o.quoi === "Paint Mask" ? !masque && de(o.nom).uniques > 0 : outilManquant(de(o.nom), niveau)));
+    if (outil) return conseil(de(outil.nom), `issue unique à trouver : ${outil.quoi}`);
+    const residential = quartiers.find((q) => q.nom === "Residential District");
+    if (niveau >= 50 && residential?.verrouille && de("East Side")?.uniques > 0) {
+      return conseil(de("East Side"), "issue unique à trouver : accès à Residential");
+    }
     const sur = [...ouverts].sort((a, b) => QUARTIERS[a.nom].echec - QUARTIERS[b.nom].echec)[0];
-    return sur ? { nom: sur.nom, couleur: couleur(sur), pourquoi: `quartier le plus sûr (${String(QUARTIERS[sur.nom].echec).replace(".", ",")} % d'échec)` } : null;
+    return sur ? conseil(sur, `quartier le plus sûr (${String(QUARTIERS[sur.nom].echec).replace(".", ",")} % d'échec)`) : null;
   }
 
   function lireQuartiers() {
@@ -421,7 +435,8 @@
     const quartiers = lireQuartiers();
     if (!quartiers.length) return;
     const niveau = parseFloat(document.querySelector('[aria-label^="Skill: "]')?.getAttribute("aria-label").slice(7)) || 0;
-    const c = conseilGraffiti(quartiers, niveau);
+    const masque = !!document.querySelector('[aria-label="Enhancer: Paint Mask, owned"]');
+    const c = conseilGraffiti(quartiers, niveau, masque);
     let cible = null;
     quartiers.forEach((q) => {
       const bombe = q.ligne.querySelector("button[class*=sprayCanButton]");
