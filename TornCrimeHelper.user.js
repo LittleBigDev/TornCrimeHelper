@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         TornCrimeHelper
 // @namespace    wardogs.torncrimehelper
-// @version      1.0
-// @description  Aide aux crimes Torn. Bootlegging : genre de DVD à copier selon un ratio visé, Copy et Sell grisés quand ce n'est pas le moment.
+// @version      1.1
+// @description  Aide aux crimes Torn. Bootlegging : genre de DVD à copier selon un ratio visé, Copy et Sell grisés quand ce n'est pas le moment. Graffiti : quartier et couleur à utiliser.
 // @match        https://www.torn.com/page.php?sid=crimes*
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -336,6 +336,112 @@
     p.append(z);
   }
 
+  // ---------- Graffiti : quartier et couleur ----------
+  // Sur la ligne du quartier conseillé seulement : cadre autour du choix de la bombe (vert : bonne couleur, rouge :
+  // à changer) et cadre vert autour de Spray, chacun avec son info-bulle. Rien d'autre n'est affiché.
+  // Source : guide « [Crimes 2.0] Graffiti: An In-Depth Guide » (forum Torn, données de 2023, couleurs peu sûres).
+
+  // Ordre de la page ; échec moyen en %, couleurs qui semblent les meilleures pour l'argent et la réputation
+  const QUARTIERS = {
+    "East Side": { echec: 2.31, argent: "Purple", rep: "Red" },
+    "West Side": { echec: 2.25, argent: "Green", rep: "Blue" },
+    "North Side": { echec: 2.37, argent: "Green", rep: "Orange" },
+    "Residential District": { echec: 0.92, argent: "White", rep: "Blue" },
+    "Red-Light District": { echec: 3.16, argent: "Green", rep: "Pink" },
+    "Financial District": { echec: 2.87, argent: "Black", rep: "Red" },
+    "City Center": { echec: 2.27, argent: "Green", rep: "Blue" },
+  };
+  // Issues uniques à aller chercher dès le niveau atteint : objets clés et accès aux quartiers
+  const CLES = [
+    { nom: "West Side", niveau: 15, quoi: "Ladder" },
+    { nom: "North Side", niveau: 25, quoi: "Wire Cutters" },
+    { nom: "East Side", niveau: 35, quoi: "Paint Mask" },
+    { nom: "East Side", niveau: 50, quoi: "accès à Residential" },
+    { nom: "West Side", niveau: 50, quoi: "accès à Red-Light" },
+  ];
+  const COULEURS = { Black: "noir", Blue: "bleu", Brown: "marron", Green: "vert", Orange: "orange", Pink: "rose",
+    Purple: "violet", Red: "rouge", White: "blanc", Yellow: "jaune" };
+  const graffiti = () => location.hash.includes("graffiti");
+
+  // Quartiers : [{ nom, rep (étoiles 0-5), verrouille, uniques (issues uniques à trouver) }] ; niveau : skill Graffiti.
+  // Rend { nom, couleur, pourquoi } ou null. Ordre : issue unique du crew, objets clés et accès, quartier le plus sûr.
+  function conseilGraffiti(quartiers, niveau) {
+    const ouverts = quartiers.filter((q) => !q.verrouille && QUARTIERS[q.nom]);
+    const de = (nom) => ouverts.find((q) => q.nom === nom);
+    const couleur = (q) => (q.rep < 5 ? QUARTIERS[q.nom].rep : QUARTIERS[q.nom].argent);
+    const sansCrew = quartiers.some((q) => q.nom === "Financial District" && q.verrouille);
+    const crew = niveau >= 70 && sansCrew && ouverts.find((q) => q.rep >= 5 && q.uniques > 0 && !/Financial|City/.test(q.nom));
+    if (crew) return { nom: crew.nom, couleur: couleur(crew), pourquoi: "issue unique du crew (R5 et niveau 70)" };
+    const cle = CLES.find((c) => niveau >= c.niveau && de(c.nom)?.uniques > 0);
+    // les étoiles ne disent pas laquelle : lister ce que le quartier peut donner à ce niveau
+    const quoi = () => CLES.filter((c) => c.nom === cle.nom && niveau >= c.niveau).map((c) => c.quoi).join(" ou ");
+    if (cle) return { nom: cle.nom, couleur: couleur(de(cle.nom)), pourquoi: `issue unique à trouver (${quoi()})` };
+    const sur = [...ouverts].sort((a, b) => QUARTIERS[a.nom].echec - QUARTIERS[b.nom].echec)[0];
+    return sur ? { nom: sur.nom, couleur: couleur(sur), pourquoi: `quartier le plus sûr (${String(QUARTIERS[sur.nom].echec).replace(".", ",")} % d'échec)` } : null;
+  }
+
+  function lireQuartiers() {
+    return [...document.querySelectorAll("[class*=crimeOptionWrapper]")].map((r) => ({
+      ligne: r,
+      nom: r.querySelector("[class*=crimeOptionSection][class*=flexGrow]")?.childNodes[0]?.textContent.trim(),
+      rep: Number(/Reputation (\d)/.exec(r.querySelector("[class*=reputationIconWrapper]")?.getAttribute("aria-label"))?.[1] || 0),
+      verrouille: /locked/.test(r.querySelector("[class*=crimeOption]")?.className),
+      uniques: Number(/(\d+) unique outcome/.exec(r.querySelector("button[class*=commitButton]")?.getAttribute("aria-label"))?.[1] || 0),
+    }));
+  }
+
+  // Liseré autour d'un bouton (outline : un cadre intérieur serait caché par l'image de la bombe) et info-bulle,
+  // posés ou retirés ; écrits seulement s'ils changent. Marque data-tch-cadre pour retrouver ce qu'on a posé.
+  const TRAIT_VERT = "2px solid #34d399", TRAIT_ROUGE = "2px solid #f87171", TRAIT_POINTILLE = "2px dashed #34d399";
+  function cadrer(b, trait, texte) {
+    if (!b) return;
+    if (trait) {
+      if (b.dataset.tchCadre !== trait) {
+        b.style.setProperty("outline", trait, "important");
+        b.style.setProperty("outline-offset", "2px", "important");
+        b.style.setProperty("border-radius", "6px");
+        b.dataset.tchCadre = trait;
+      }
+      if (b.dataset.tchBulle !== texte) b.dataset.tchBulle = texte;
+    } else if (b.dataset.tchCadre) {
+      ["outline", "outline-offset", "border-radius"].forEach((x) => b.style.removeProperty(x));
+      delete b.dataset.tchCadre;
+      delete b.dataset.tchBulle;
+    }
+  }
+
+  // Le sélecteur de bombes est commun à toutes les lignes : on retient de quelle ligne il a été ouvert
+  let bombeOuverte = null;
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest?.("button[class*=sprayCanButton]");
+    if (b) bombeOuverte = b;
+  }, true);
+
+  function majGraffiti() {
+    const quartiers = lireQuartiers();
+    if (!quartiers.length) return;
+    const niveau = parseFloat(document.querySelector('[aria-label^="Skill: "]')?.getAttribute("aria-label").slice(7)) || 0;
+    const c = conseilGraffiti(quartiers, niveau);
+    let cible = null;
+    quartiers.forEach((q) => {
+      const bombe = q.ligne.querySelector("button[class*=sprayCanButton]");
+      const spray = q.ligne.querySelector("button[class*=commitButton]");
+      if (!c || q.nom !== c.nom) { cadrer(bombe, ""); cadrer(spray, ""); return; }
+      cible = bombe;
+      const voulue = COULEURS[c.couleur] || c.couleur, but = q.rep < 5 ? `réputation, R${q.rep} → R5` : "argent, R5 atteint";
+      const actuelle = /^(\w+) spray selected/.exec(bombe?.getAttribute("aria-label") || "")?.[1];
+      cadrer(bombe, actuelle === c.couleur ? TRAIT_VERT : TRAIT_ROUGE, actuelle === c.couleur
+        ? `Bonne couleur : ${voulue} (${but})`
+        : `Choisir ${voulue} (${but}) ; pas de bombe ${voulue} : Print Store`);
+      cadrer(spray, TRAIT_VERT, `Spray ici : ${c.pourquoi}`);
+    });
+    // sélecteur ouvert depuis la ligne conseillée : pointillés verts sur la bonne bombe (absente si on n'en a pas)
+    const choix = document.querySelector("[class*=popover]"), ok = choix && cible && bombeOuverte === cible;
+    const bonne = ok ? choix.querySelector(`button[aria-label="${c.couleur} spray paint"]`) : null;
+    document.querySelectorAll("[class*=popover] button[data-tch-cadre]").forEach((b) => { if (b !== bonne) cadrer(b, ""); });
+    cadrer(bonne, TRAIT_POINTILLE, `Couleur conseillée : ${COULEURS[c?.couleur] || ""}`);
+  }
+
   // Une seule bulle flottante pour toute la page : les lignes de Torn coupent ce qui dépasse (overflow hidden)
   const infobulle = document.createElement("div");
   infobulle.style.cssText = "position:fixed;display:none;background:#1b1f26;color:#eee;padding:6px 10px;border-radius:5px;"
@@ -349,7 +455,7 @@
     infobulle.style.display = "block";
     const r = el.getBoundingClientRect();
     infobulle.style.left = `${Math.max(4, r.right - infobulle.offsetWidth)}px`;
-    infobulle.style.top = `${r.top - infobulle.offsetHeight - 4}px`;
+    infobulle.style.top = `${r.bottom + 6}px`;  // dessous : Torn met ses propres bulles au-dessus
   });
 
 
@@ -361,6 +467,7 @@
     requestAnimationFrame(() => {
       prevu = false;
       if (bootlegging()) majDvd();
+      if (graffiti()) majGraffiti();
     });
   }
   // characterData : Torn change certains textes en place (« 17 queued » → « 50 queued ») sans recréer d'élément

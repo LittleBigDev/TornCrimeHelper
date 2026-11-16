@@ -16,6 +16,18 @@ Sur la page Bootlegging, un bloc au-dessus des crimes (même style que Torn Orac
 
 La présélection d'un genre est un simple choix d'affichage, sans requête au serveur. Le script ne clique jamais sur Copy ni Sell.
 
+### Graffiti : quartier et couleur
+
+Sur la page Graffiti, seule la ligne du quartier à taguer maintenant est marquée : un liseré autour du choix de la bombe (**vert** si la couleur est la bonne, **rouge** sinon) et un liseré vert autour de **Spray**. Quand on ouvre le choix de la bombe depuis cette ligne, la bonne bombe est entourée de pointillés verts (si on n'en a pas, le liseré rouge renvoie au Print Store). Chaque marque a une info-bulle courte qui dit pourquoi.
+
+Choix du quartier, dans cet ordre :
+
+1. **Crew** : niveau 70, pas encore de crew, et R5 dans un quartier où une issue unique est disponible : ce quartier (issue unique qui fait rejoindre un crew).
+2. **Objets clés et accès** : Ladder (West Side, niveau 15), Wire Cutters (North Side, 25), Paint Mask (East Side, 35), accès à Residential (East Side, 50) et à Red-Light (West Side, 50) ; le quartier est conseillé tant que la page y affiche une issue unique disponible (étoile sous Spray).
+3. Sinon, le **quartier le plus sûr** déjà débloqué : Residential (0,92 % d'échec), West Side, City Center, East Side, North Side, Financial, Red-Light.
+
+Couleur : celle qui semble la meilleure pour la **réputation** tant que le quartier n'est pas à R5, puis celle qui semble la meilleure pour l'**argent** (East Side rouge puis violet, West Side bleu puis vert, North Side orange puis vert, Residential bleu puis blanc, Red-Light rose puis vert, Financial rouge puis noir, City Center bleu puis vert). Source : « [Crimes 2.0] Graffiti: An In-Depth Guide » (forum Torn) ; d'après son auteur, l'effet des couleurs est mal mesuré.
+
 ### Bootlegging : export et import de l'historique
 
 Les conseils s'affinent avec l'historique des Copy mémorisé par le script. Pour le passer à un autre appareil ou navigateur (Torn PDA compris) : bouton **Sauvegarde** dans l'en-tête du bloc Bootlegging. La zone qui s'ouvre permet :
