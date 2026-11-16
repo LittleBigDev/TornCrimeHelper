@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TornCrimeHelper
 // @namespace    wardogs.torncrimehelper
-// @version      1.2
+// @version      1.3
 // @description  Aide aux crimes Torn. Bootlegging : genre de DVD à copier selon un ratio visé, Copy et Sell grisés quand ce n'est pas le moment. Graffiti : quartier et couleur à utiliser.
 // @match        https://www.torn.com/page.php?sid=crimes*
 // @grant        GM_getValue
@@ -437,7 +437,7 @@
     const niveau = parseFloat(document.querySelector('[aria-label^="Skill: "]')?.getAttribute("aria-label").slice(7)) || 0;
     const masque = !!document.querySelector('[aria-label="Enhancer: Paint Mask, owned"]');
     const c = conseilGraffiti(quartiers, niveau, masque);
-    let cible = null;
+    let cible = null, dejaBonne = false;
     quartiers.forEach((q) => {
       const bombe = q.ligne.querySelector("button[class*=sprayCanButton]");
       const spray = q.ligne.querySelector("button[class*=commitButton]");
@@ -445,13 +445,15 @@
       cible = bombe;
       const voulue = COULEURS[c.couleur] || c.couleur, but = q.rep < 5 ? `réputation, R${q.rep} → R5` : "argent, R5 atteint";
       const actuelle = /^(\w+) spray selected/.exec(bombe?.getAttribute("aria-label") || "")?.[1];
+      dejaBonne = actuelle === c.couleur;
       cadrer(bombe, actuelle === c.couleur ? TRAIT_VERT : TRAIT_ROUGE, actuelle === c.couleur
         ? `Bonne couleur : ${voulue} (${but})`
         : `Choisir ${voulue} (${but}) ; pas de bombe ${voulue} : Print Store`);
       cadrer(spray, TRAIT_VERT, `Spray ici : ${c.pourquoi}`);
     });
-    // sélecteur ouvert depuis la ligne conseillée : pointillés verts sur la bonne bombe (absente si on n'en a pas)
-    const choix = document.querySelector("[class*=popover]"), ok = choix && cible && bombeOuverte === cible;
+    // sélecteur ouvert depuis la ligne conseillée : pointillés verts sur la bonne bombe (absente si on n'en a pas),
+    // sauf si elle est déjà choisie (Torn la marque déjà)
+    const choix = document.querySelector("[class*=popover]"), ok = choix && cible && bombeOuverte === cible && !dejaBonne;
     const bonne = ok ? choix.querySelector(`button[aria-label="${c.couleur} spray paint"]`) : null;
     document.querySelectorAll("[class*=popover] button[data-tch-cadre]").forEach((b) => { if (b !== bonne) cadrer(b, ""); });
     cadrer(bonne, TRAIT_POINTILLE, `Couleur conseillée : ${COULEURS[c?.couleur] || ""}`);
@@ -486,6 +488,8 @@
     });
   }
   // characterData : Torn change certains textes en place (« 17 queued » → « 50 queued ») sans recréer d'élément
-  new MutationObserver(surveiller).observe(document.body, { childList: true, subtree: true, characterData: true });
+  // aria-label : la bombe choisie change l'étiquette du bouton (« Blue spray selected ») ; le script n'y écrit jamais
+  new MutationObserver(surveiller).observe(document.body,
+    { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["aria-label"] });
   surveiller();
 })();
