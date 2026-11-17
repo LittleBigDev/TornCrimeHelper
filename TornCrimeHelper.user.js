@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TornCrimeHelper
 // @namespace    wardogs.torncrimehelper
-// @version      1.4
+// @version      1.5
 // @description  Aide aux crimes Torn. Bootlegging : genre de DVD à copier selon un ratio visé, Copy et Sell grisés quand ce n'est pas le moment. Graffiti : quartier et couleur à utiliser.
 // @match        https://www.torn.com/page.php?sid=crimes*
 // @grant        GM_getValue
@@ -235,6 +235,11 @@
     };
     bloquer(copy, c.copier !== undefined ? "" : c.vendre ? "Bon ratio : rien à copier, vendre" : "Bon ratio : rien à copier, attendre la fin des copies");
     bloquer(sell, c.vendre ? "" : c.attendre ? "Attendre la fin des copies avant de vendre" : `Copies à faire avant de vendre (copier ${GENRES[c.copier]})`);
+    // DVD vierges déballés (« Add: Blank DVDs, 2530 DVDs unpacked ») : sous un clic de copies, Torn grise tout
+    // sans dire pourquoi ; liseré rouge sur le bouton d'ajout
+    const vierges = document.querySelector('button[aria-label^="Add: Blank DVDs"]');
+    const nVierges = Number(/([\d,]+) DVDs unpacked/.exec(vierges?.getAttribute("aria-label"))?.[1].replace(/,/g, "") || 0);
+    cadrer(vierges, nVierges < Math.max(...copies) ? TRAIT_ROUGE : "", `Ajouter des DVD vierges (${nVierges} déballés)`);
     let attente = document.getElementById("tch-dvd-attente");
     if (c.attendre && !attente && sell) {
       attente = document.createElement("span");
