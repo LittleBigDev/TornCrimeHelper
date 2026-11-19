@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TornCrimeHelper
 // @namespace    wardogs.torncrimehelper
-// @version      1.5
+// @version      1.6
 // @description  Aide aux crimes Torn. Bootlegging : genre de DVD à copier selon un ratio visé, Copy et Sell grisés quand ce n'est pas le moment. Graffiti : quartier et couleur à utiliser.
 // @match        https://www.torn.com/page.php?sid=crimes*
 // @grant        GM_getValue
@@ -24,9 +24,14 @@
   // ou attendre la fin des copies (Copy et Sell grisés). Stock d'un genre = en stock + en file d'attente.
 
   const GENRES = ["Action", "Comedy", "Drama", "Fantasy", "Horror", "Romance", "Thriller", "Sci-Fi"];  // id Torn = rang + 1
-  // Ratio visé (plus petits entiers) ; la tolérance doit couvrir une demi-copie (~7 DVD) du plus petit genre :
-  // Sci-Fi pèse 11/225, soit ~47 DVD sur ~950 au total, et 7 DVD en font 15 %
-  const RATIO = [54, 38, 30, 38, 16, 16, 22, 11];
+  // Ratio visé : celui des DVD vendus par genre (statistiques du crime, lues dans les réponses de Torn), dès qu'il
+  // y en a assez ; avant, ratio communautaire fixe (plus petits entiers). Le stock minimal (seuilDvd) s'y adapte.
+  const RATIO_FIXE = [54, 38, 30, 38, 16, 16, 22, 11];
+  const VENTES_MIN = 2000;  // DVD vendus avant de passer au ratio réel (part d'un genre à ~5 % : ±0,5 point)
+  const ratio = () => {
+    const v = GM_getValue("bootleg_ventes", []);
+    return v.length === 8 && v.reduce((a, b) => a + b, 0) >= VENTES_MIN ? v : RATIO_FIXE;
+  };
   const TOLERANCE = 15;  // en % de la cible, en plus comme en moins
   const COPIES_DEFAUT = 15;  // tant qu'aucune copie n'est mémorisée
   const bootlegging = () => location.hash.includes("bootlegging");
@@ -43,12 +48,19 @@
     GM_setValue("bootleg_copies", h);
   }
 
+  // Toute réponse de Bootlegging : DVD vendus par genre depuis le début (CDType1Sold à CDType8Sold)
+  function noterVentes(texte) {
+    const s = JSON.parse(texte).DB?.currentUserStats;
+    const v = GENRES.map((_, i) => Number(s?.[`CDType${i + 1}Sold`]));
+    if (v.every((x) => Number.isFinite(x) && x >= 0)) GM_setValue("bootleg_ventes", v);
+  }
+
   {  // espion des réponses de Torn
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window, origine = page.fetch;
     const espion = function (...args) {
       const p = origine.apply(this, args);
       const url = String(args[0]?.url || args[0]);
-      if (url.includes("crimesData")) p.then((r) => r.clone().text()).then((t) => noterCopie(url, t)).catch(() => {});
+      if (url.includes("crimesData")) p.then((r) => r.clone().text()).then((t) => { noterVentes(t); noterCopie(url, t); }).catch(() => {});
       return p;
     };
     page.fetch = typeof exportFunction === "function" ? exportFunction(espion, page) : espion;
@@ -75,9 +87,9 @@
   // Cible d'un genre : sa part du ratio appliquée à un stock total (en stock + en file). Écart acceptable : à moins
   // de TOLERANCE % de la cible, en plus comme en moins ; l'écart accepté grandit donc avec le stock total.
   function ecarts(stocks, total = stocks.reduce((a, b) => a + b, 0)) {
-    const r = RATIO.reduce((a, b) => a + b, 0);
+    const rt = ratio(), r = rt.reduce((a, b) => a + b, 0);
     return stocks.map((v, i) => {
-      const cible = (RATIO[i] / r) * total;
+      const cible = (rt[i] / r) * total;
       return { cible, ecart: v - cible, ok: Math.abs(v - cible) <= (cible * TOLERANCE) / 100 };
     });
   }
@@ -85,8 +97,8 @@
   // Stock total minimal : celui où une demi-copie (l'erreur d'arrondi d'un clic) tient dans la tolérance pour
   // chaque genre, le plus petit compris. Il suit les copies moyennes par clic, donc le niveau.
   function seuilDvd(copies) {
-    const r = RATIO.reduce((a, b) => a + b, 0);
-    return Math.max(...RATIO.map((x, i) => copies[i] / 2 / (TOLERANCE / 100) / (x / r)));
+    const rt = ratio(), r = rt.reduce((a, b) => a + b, 0);
+    return Math.max(...rt.map((x, i) => copies[i] / 2 / (TOLERANCE / 100) / (x / r)));
   }
 
   // Conseil : { copier: rang du genre } ou, quand rien n'est à copier, { vendre } (file vide) ou { attendre }.
@@ -97,9 +109,10 @@
     const fin = enFile > 0 ? { attendre: true } : { vendre: true };
     const sous = stocks.reduce((a, b) => a + b, 0) < seuilDvd(copies);
     if (!sous && ecarts(stocks).every((x) => x.ok)) return fin;
-    let meilleur = -1, ecart = sous ? Infinity : ecartRatio(stocks, RATIO);
+    const rt = ratio();
+    let meilleur = -1, ecart = sous ? Infinity : ecartRatio(stocks, rt);
     stocks.forEach((_, i) => {
-      const e = ecartRatio(stocks.map((v, j) => (j === i ? v + copies[i] : v)), RATIO);
+      const e = ecartRatio(stocks.map((v, j) => (j === i ? v + copies[i] : v)), rt);
       if (e < ecart - 1e-9) { ecart = e; meilleur = i; }
     });
     return meilleur >= 0 ? { copier: meilleur } : fin;
@@ -288,7 +301,7 @@
     const copies = GM_getValue("bootleg_copies", []);
     return JSON.stringify({
       script: "TornCrimeHelper", partie: "bootlegging", date: new Date().toISOString(),
-      reglages: { genres: GENRES, ratio: RATIO, tolerance: TOLERANCE },
+      reglages: { genres: GENRES, ratio: ratio(), tolerance: TOLERANCE },
       moyennes: moyennesDvd(copies),
       copies,
     }, null, 1);
