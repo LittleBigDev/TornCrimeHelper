@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TornCrimeHelper
 // @namespace    wardogs.torncrimehelper
-// @version      1.6
+// @version      1.7
 // @description  Aide aux crimes Torn. Bootlegging : genre de DVD à copier selon un ratio visé, Copy et Sell grisés quand ce n'est pas le moment. Graffiti : quartier et couleur à utiliser.
 // @match        https://www.torn.com/page.php?sid=crimes*
 // @grant        GM_getValue
@@ -55,11 +55,47 @@
     if (v.every((x) => Number.isFinite(x) && x >= 0)) GM_setValue("bootleg_ventes", v);
   }
 
-  {  // espion des réponses de Torn
+  // Sécurité : un Copy ne part que sur le genre conseillé ou sur le dernier genre choisi à la main (clic réel,
+  // pas la présélection du script). Des Copy sont déjà partis sur un autre genre que celui affiché, cause inconnue.
+  let conseilGenre = null, choixManuel = null;  // id Torn (rang + 1)
+  document.addEventListener("click", (e) => {
+    const b = e.isTrusted && e.target.closest?.("button[class*=genreStock]");
+    const i = b ? GENRES.indexOf(b.querySelector("[class*=genreName]")?.textContent.trim()) : -1;
+    if (i >= 0) choixManuel = i + 1;
+  }, true);
+
+  function copieRefusee(url) {
+    const u = new URL(url, location.href), g = Number(u.searchParams.get("value1"));
+    if (u.searchParams.get("step") !== "attempt" || u.searchParams.get("crimeID") !== "8" || !(g >= 1 && g <= GENRES.length)) return null;
+    const permis = [conseilGenre, choixManuel].filter((x) => x !== null);
+    if (!permis.length || permis.includes(g)) return null;
+    return `Copy bloqué : la requête demandait ${GENRES[g - 1]}, attendu ${permis.map((x) => GENRES[x - 1]).join(" ou ")}`;
+  }
+
+  function signalerBlocage(texte) {
+    const p = document.getElementById("tch-dvd");
+    if (!p) return;
+    let a = p.querySelector(".o-bloque");
+    if (!a) {
+      a = document.createElement("div");
+      a.className = "o-bloque";
+      p.querySelector(".o-head").after(a);
+    }
+    a.textContent = texte;
+    clearTimeout(signalerBlocage.minuteur);
+    signalerBlocage.minuteur = setTimeout(() => a.remove(), 15000);
+  }
+
+  {  // espion des requêtes et réponses de Torn
     const page = typeof unsafeWindow !== "undefined" ? unsafeWindow : window, origine = page.fetch;
     const espion = function (...args) {
-      const p = origine.apply(this, args);
       const url = String(args[0]?.url || args[0]);
+      const refus = copieRefusee(url);
+      if (refus) {  // la requête ne part pas : ce clic ne fait aucune action
+        signalerBlocage(refus);
+        return Promise.reject(new Error("TornCrimeHelper : " + refus));
+      }
+      const p = origine.apply(this, args);
       if (url.includes("crimesData")) p.then((r) => r.clone().text()).then((t) => { noterVentes(t); noterCopie(url, t); }).catch(() => {});
       return p;
     };
@@ -164,6 +200,7 @@
 #tch-dvd .o-ecart { min-width:44px; padding:1px 8px; border-radius:999px; text-align:center; font-weight:700;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--o-go); background:var(--o-go-soft); }
 #tch-dvd .o-ecart.is-warn { color:var(--o-warn); background:var(--o-warn-soft); }
+#tch-dvd .o-bloque { padding:6px 10px; background:#7f1d1d; color:#fecaca; font-weight:700; }
 #tch-dvd .o-btn, #tch-dvd .o-save button { flex:0 0 auto; padding:2px 8px; border:1px solid var(--o-line); border-radius:6px;
   background:var(--o-bg); color:var(--o-dim); font-size:12px; cursor:pointer; }
 #tch-dvd .o-save { display:flex; flex-direction:column; gap:6px; padding:8px 10px; border-top:1px solid var(--o-line); }
@@ -267,9 +304,11 @@
       + ` · stock ${stocks.reduce((x, y) => x + y, 0)}, minimum ${Math.ceil(seuilDvd(copies))}`);
 
     // présélection du genre conseillé, seulement quand le conseil change (un choix à la main est respecté)
+    conseilGenre = c.copier !== undefined ? c.copier + 1 : null;
     const cle = JSON.stringify(c);
     if (cle !== dernierConseil) {
       dernierConseil = cle;
+      choixManuel = null;  // nouveau conseil, présélectionné : un ancien choix à la main ne vaut plus
       const g = genres.find((x) => x.i === c.copier);
       if (g && !g.choisi) g.bouton.click();  // simple choix d'affichage, aucune requête au serveur
     }

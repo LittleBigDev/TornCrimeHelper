@@ -17,6 +17,8 @@ Sur la page Bootlegging, un bloc au-dessus des crimes (même style que Torn Orac
 
 La présélection d'un genre est un simple choix d'affichage, sans requête au serveur. Le script ne clique jamais sur Copy ni Sell.
 
+Sécurité : un Copy ne part que sur le genre conseillé ou sur le dernier genre choisi à la main. Sinon la requête n'est pas envoyée (le clic ne fait rien) et un bandeau rouge le signale dans le bloc du script.
+
 ### Graffiti : quartier et couleur
 
 Sur la page Graffiti, seule la ligne du quartier à taguer maintenant est marquée : un liseré autour du choix de la bombe (**vert** si la couleur est la bonne, **rouge** sinon) et un liseré vert autour de **Spray**. Quand on ouvre le choix de la bombe depuis cette ligne, la bonne bombe est entourée de pointillés verts (si on n'en a pas, le liseré rouge renvoie au Print Store). Chaque marque a une info-bulle courte qui dit pourquoi.
