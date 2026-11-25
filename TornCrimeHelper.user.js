@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TornCrimeHelper
 // @namespace    wardogs.torncrimehelper
-// @version      1.7
+// @version      1.8
 // @description  Aide aux crimes Torn. Bootlegging : genre de DVD à copier selon un ratio visé, Copy et Sell grisés quand ce n'est pas le moment. Graffiti : quartier et couleur à utiliser.
 // @match        https://www.torn.com/page.php?sid=crimes*
 // @grant        GM_getValue
@@ -239,10 +239,12 @@
   const ecrire = (el, texte) => { if (el.textContent !== texte) el.textContent = texte; };
 
   function majDvd() {
-    // boutons repérés par leur texte (« Copy2 », « Sell5 ») : désactivés faute de nerve, ils changent de libellé
+    // boutons repérés par leur aria-label (« Copy, 2 nerve ») : en mode mobile, le texte n'est plus que le coût en
+    // nerve ; à défaut, par leur texte (« Copy2 », « Sell5 »)
     const boutons = [...document.querySelectorAll("button[class*=commitButton]")];
-    const copy = boutons.find((b) => /^copy/i.test(b.textContent.trim()));
-    const sell = boutons.find((b) => /^sell/i.test(b.textContent.trim()));
+    const nom = (b) => b.getAttribute("aria-label") || b.textContent.trim();
+    const copy = boutons.find((b) => /^copy/i.test(nom(b)));
+    const sell = boutons.find((b) => /^sell/i.test(nom(b)));
     const genres = lireGenres(), zone = document.querySelector("[class*=currentCrime]");
     if (genres.length !== GENRES.length || !zone) return;
     const p = panneauDvd(zone);
