@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TornCrimeHelper
 // @namespace    wardogs.torncrimehelper
-// @version      1.8
+// @version      1.9
 // @description  Aide aux crimes Torn. Bootlegging : genre de DVD à copier selon un ratio visé, Copy et Sell grisés quand ce n'est pas le moment. Graffiti : quartier et couleur à utiliser.
 // @match        https://www.torn.com/page.php?sid=crimes*
 // @grant        GM_getValue
@@ -453,10 +453,19 @@
     return sur ? conseil(sur, `quartier le plus sûr (${String(QUARTIERS[sur.nom].echec).replace(".", ",")} % d'échec)`) : null;
   }
 
+  // Nom du quartier : premier texte de la case. En mode mobile, il est dans un bloc avec le nombre de tags et
+  // abrégé (« Residential », « Red-Light », « Financial ») : ramené au nom complet
+  function nomQuartier(caseNom) {
+    const w = caseNom && document.createTreeWalker(caseNom, NodeFilter.SHOW_TEXT);
+    let n, t = "";
+    while (w && !t && (n = w.nextNode())) t = n.textContent.trim();
+    return t && (Object.keys(QUARTIERS).find((k) => k.startsWith(t)) || t);
+  }
+
   function lireQuartiers() {
     return [...document.querySelectorAll("[class*=crimeOptionWrapper]")].map((r) => ({
       ligne: r,
-      nom: r.querySelector("[class*=crimeOptionSection][class*=flexGrow]")?.childNodes[0]?.textContent.trim(),
+      nom: nomQuartier(r.querySelector("[class*=crimeOptionSection][class*=flexGrow]")),
       rep: Number(/Reputation (\d)/.exec(r.querySelector("[class*=reputationIconWrapper]")?.getAttribute("aria-label"))?.[1] || 0),
       verrouille: /locked/.test(r.querySelector("[class*=crimeOption]")?.className),
       // étoiles sous Spray, une par issue unique disponible ; l'étiquette du bouton les compte aussi, mais Torn la
